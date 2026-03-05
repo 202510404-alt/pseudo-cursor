@@ -2,11 +2,11 @@ import os
 import re
 import ast
 
-# 1. 전역 인덱스 변수
+# 전역 인덱스 변수
 PROJECT_INDEX = {}
 
 def build_index():
-    """프로젝트 전체 파일 목록 인덱싱 (제한 없음)"""
+    """프로젝트 전체 파일 목록 인덱싱"""
     global PROJECT_INDEX
     current_dir = os.getcwd()
     index = {}
@@ -15,47 +15,48 @@ def build_index():
     for root, dirs, files in os.walk(current_dir):
         dirs[:] = [d for d in dirs if d not in ignore_dirs]
         for file in files:
-            if file.endswith((".py", ".java", ".env", ".json", ".csv", ".txt")):
+            if file.endswith((".py", ".java", ".env", ".json", ".csv", ".txt", ".xml")):
                 rel_path = os.path.relpath(os.path.join(root, file), current_dir)
                 index[file.lower()] = rel_path
     
     PROJECT_INDEX = index
     return len(index)
 
+def get_project_outline():
+    """
+    UI에서 프로젝트 구조를 보여주거나 AI에게 전체 지도를 전달할 때 사용
+    """
+    if not PROJECT_INDEX: build_index()
+    outline = "--- Full Project Structure ---\n"
+    for path in sorted(PROJECT_INDEX.values()):
+        outline += f"- {path}\n"
+    return outline
+
 def get_code_skeleton(file_path):
-    """
-    [Cursor Style] 파일의 유전자(구조, 의존성, 내부 호출)를 전수 추출합니다.
-    갯수 제한 없이 '의미 있는' 모든 정보를 수집합니다.
-    """
+    """파일의 구조(메서드, 필드, 호출 관계) 추출"""
     try:
+        # 파일이 실제로 존재하는지 확인
+        if not os.path.exists(file_path):
+            return "(File not found)"
+            
         with open(file_path, "r", encoding="utf-8") as f:
             lines = f.readlines()
             content = "".join(lines)
         
         skeleton = []
-        
-        # --- JAVA 분석 모드 ---
         if file_path.endswith(".java"):
-            # 1. Imports (의존성 지도)
+            # Imports
             imports = [l.strip() for l in lines if l.startswith("import ")]
-            if imports: skeleton.append(f"[Dependency: Imports]\n" + "\n".join(imports))
+            if imports: skeleton.append(f"[Imports]\n" + "\n".join(imports[:5]) + "...")
 
-            # 2. Fields (공유 변수 및 타입)
-            fields = re.findall(r'(private|public|protected)\s+(static\s+)?(final\s+)?([\w<>\s\[\]]+)\s+(\w+)\s*(?:=.*?)?;', content)
-            for f_mod, f_static, f_final, f_type, f_name in fields:
-                skeleton.append(f"  - Field: {f_type.strip()} {f_name}")
-
-            # 3. Methods & Internal Calls (핵심 로직 지문)
-            # 메서드 본문 안에서 호출되는 주요 API/메서드를 추출하여 흐름 파악을 돕습니다.
+            # Methods & Internal Calls
             method_blocks = re.finditer(r'(public|protected|private|static|\s) +[\w\<\>\[\]]+\s+(\w+)\s*\([^\)]*\)\s*\{', content)
-            
             for match in method_blocks:
                 m_name = match.group(2)
                 if m_name in ['if', 'for', 'while', 'switch', 'catch']: continue
-                
                 skeleton.append(f"  - Method: {m_name}")
                 
-                # 메서드 내부를 들여다보고 호출되는 주요 심볼들 추출 (무제한)
+                # 내부 호출 추출 로직 (중괄호 매칭)
                 start = match.end()
                 bracket_count = 1
                 end = start
@@ -63,111 +64,93 @@ def get_code_skeleton(file_path):
                     if content[end] == '{': bracket_count += 1
                     elif content[end] == '}': bracket_count -= 1
                     end += 1
-                
                 body = content[start:end]
-                # .methodCall() 또는 ClassName.method() 형태 추출
                 calls = set(re.findall(r'\.?(\w+)\s*\(', body))
-                # 예약어 제외한 순수 호출 목록
-                meaningful_calls = [c for c in calls if c not in ['if', 'for', 'while', 'switch', 'println', 'printf']]
+                meaningful_calls = [c for c in calls if c not in ['if', 'for', 'while', 'switch', 'println']]
                 if meaningful_calls:
-                    skeleton.append(f"    (Internal Calls: {', '.join(meaningful_calls)})")
+                    skeleton.append(f"    (Calls: {', '.join(list(meaningful_calls)[:10])})")
 
-        # --- PYTHON 분석 모드 ---
         elif file_path.endswith(".py"):
             try:
                 node = ast.parse(content)
                 for item in node.body:
-                    if isinstance(item, ast.ClassDef):
-                        skeleton.append(f"Python Class: {item.name}")
-                        for sub in item.body:
-                            if isinstance(sub, ast.FunctionDef):
-                                skeleton.append(f"  - Method: {sub.name}")
-                    elif isinstance(item, ast.FunctionDef):
-                        skeleton.append(f"Function: {item.name}")
-            except SyntaxError:
-                skeleton.append("(Python Syntax Error)")
+                    if isinstance(item, (ast.ClassDef, ast.FunctionDef)):
+                        skeleton.append(f"Python {type(item).__name__}: {item.name}")
+            except: pass
 
         return "\n".join(skeleton)
     except Exception as e:
-        return f"(Skeleton Error: {str(e)})"
+        return f"(Error: {str(e)})"
 
-def get_project_outline():
-    if not PROJECT_INDEX: build_index()
-    return "--- Full Project Structure ---\n" + "\n".join([f"- {p}" for p in PROJECT_INDEX.values()])
-
-def analyze_project_and_get_response_fast(user_prompt, model, project_outline, current_memory):
+def analyze_project_and_get_response_fast(user_prompt, model, project_outline, error_log=None):
     """
-    [전수 조사 에이전트]
-    AI가 스켈레톤을 보고 '데이터 단절'을 찾기 위해 필요한 모든 파일을 본문 요청하도록 유도
+    [짭커서 2호기 코어] 전수 조사 후 심층 분석
     """
     if not PROJECT_INDEX: build_index()
 
-    # [Step 1] 무제한 스켈레톤 맵 생성
-    project_map = "--- INTELLIGENT PROJECT MAP (SKELETON) ---\n"
+    # 1. 스켈레톤 맵 생성
+    project_map = "--- INTELLIGENT PROJECT MAP ---\n"
     for file_name, path in PROJECT_INDEX.items():
-        project_map += f"\n[FILE PATH: {path}]\n{get_code_skeleton(path)}\n"
+        project_map += f"\n[FILE: {path}]\n{get_code_skeleton(path)}\n"
 
-    # [Step 2] AI에게 흐름 기반 파일 선택 요청 (제한 없음)
+    # 2. 필요한 파일 선택 요청
     selection_prompt = f"""
-    당신은 코드 베이스의 '데이터 파이프라인'을 분석하는 아키텍트입니다. 
-    제공된 [PROJECT MAP]은 각 파일의 구조와 내부 메서드 호출 관계(Internal Calls)를 담고 있습니다.
+    당신은 코드 베이스 아키텍트입니다. 
+    사용자의 질문이나 에러를 해결하기 위해 '본문 전체'를 읽어야 할 파일들을 선택하세요.
 
-    사용자의 질문에 답하기 위해 본문 전체(Full Content)를 읽어야 하는 모든 파일을 선택하세요.
-    - 데이터의 발원지(Seed), 변환(Transform), 소비(Sink/Console) 과정을 추적하세요.
-    - 'Internal Calls' 정보를 보고 로직이 이어지는 파일은 무조건 포함하세요.
-    - 파일 개수에 제한을 두지 마세요. 관련이 있다면 1개든 20개든 전부 선택해야 합니다.
+    [현재 에러 로그]
+    {error_log if error_log else "정상 상태"}
 
-    [PROJECT MAP]
+    [프로젝트 구조 및 스켈레톤]
     {project_map}
 
-    [USER QUESTION]
+    [사용자 질문]
     {user_prompt}
 
-    응답 형식: 파일 경로만 한 줄에 하나씩 작성하세요. (다른 텍스트 금지)
+    응답 형식: 파일 경로만 한 줄에 하나씩 작성하세요. (다른 설명 금지)
     """
     
+    needed_files = []
     try:
         selection_response = model.generate_content(selection_prompt)
-        needed_files = [line.strip().replace('`', '').replace('*', '') 
-                        for line in selection_response.text.strip().split('\n') if line.strip()]
-        
-        # 실제 경로와 대조하여 유효한 것만 필터링
-        all_paths = list(PROJECT_INDEX.values())
-        final_needed = []
-        for nf in needed_files:
-            for ap in all_paths:
-                if ap.lower() in nf.lower() or nf.lower() in ap.lower():
-                    final_needed.append(ap)
-                    break
-        needed_files = list(set(final_needed))
+        # 경로 형태인 것만 필터링 (/, \ 포함 여부로 체크)
+        raw_paths = selection_response.text.strip().split('\n')
+        for rp in raw_paths:
+            cleaned = rp.strip().replace('`', '').replace('*', '')
+            if cleaned:
+                needed_files.append(cleaned)
     except:
         needed_files = []
 
-    # [Step 3] 선택된 파일 전수 로드
+    # 3. 선택된 파일 본문 로드
     detailed_context = ""
+    actual_loaded_files = []
     for path in needed_files:
         try:
-            with open(path, "r", encoding="utf-8") as f:
-                detailed_context += f"\n--- FULL CONTENT OF: {path} ---\n{f.read()}\n"
+            # 상대 경로/절대 경로 대응
+            target_path = path if os.path.isabs(path) else os.path.join(os.getcwd(), path)
+            if os.path.exists(target_path):
+                with open(target_path, "r", encoding="utf-8") as f:
+                    detailed_context += f"\n--- FULL CONTENT OF: {path} ---\n{f.read()}\n"
+                    actual_loaded_files.append(path)
         except: continue
 
-    # [Step 4] 최종 심층 분석
+    # 4. 최종 분석 및 수정 제안
     final_prompt = f"""
-    당신은 '데이터 파이프라인' 전문 분석가입니다. 
-    제공된 본문 코드를 바탕으로 데이터가 어디서 증발하거나 타입이 깨졌는지 분석하세요.
+    당신은 '짭커서' 자가 치유 에이전트입니다.
+    제공된 본문 코드를 분석하여 사용자의 요청을 해결하고, 필요하다면 수정된 코드와 실행 명령어를 제안하세요.
 
     지침:
-    1. 데이터가 생성된 후 다음 메서드로 전달되지 않는 '호출 단절'을 찾으세요.
-    2. 데이터 타입(long, double 등)이 변환 과정 없이 사용되어 발생하는 오류를 찾으세요.
-    3. 결과가 콘솔에 찍히지 않는(System.out 누락) 지점을 정확히 짚으세요.
-    4. 분석에 필요하지만 누락된 파일이 있다면 [NEED: 경로]를 남기세요.
+    1. 코드 수정 시 반드시 'TARGET_PATH: 경로'를 명시하고 전체 코드를 ```로 감싸세요.
+    2. 수정 후 검증이 필요하면 'RUN_COMMAND: 명령어'를 포함하세요.
+    3. 에러 로그가 있다면 해당 지점을 우선적으로 고치세요.
 
-    [REFERENCE CODE]
-    {detailed_context if detailed_context else '지도를 기반으로 흐름 분석 수행'}
+    [참조 코드 본문]
+    {detailed_context if detailed_context else "지도를 기반으로 분석 수행"}
 
-    [USER QUESTION]
+    [사용자 질문]
     {user_prompt}
     """
 
-    response = model.generate_content(final_prompt, stream=True)
-    return response, needed_files
+    response_stream = model.generate_content(final_prompt, stream=True)
+    return response_stream, actual_loaded_files
