@@ -1,0 +1,14 @@
+{
+    "java.configuration.runtimes": [
+        {
+            "name": "JavaSE-17",
+            "path": "C:/Program Files/Eclipse Adoptium/jdk-17.0.18.8-hotspot",
+            "default": true
+        }
+    ],
+    "java.jdt.ls.java.home": "C:/Program Files/Eclipse Adoptium/jdk-17.0.18.8-hotspot",
+    "java.compile.nullAnalysis.mode": "automatic",
+    "maven.terminal.useJavaHome": true,
+    "terminal.integrated.directory": "C:/Users/COMLAB/Desktop/card/wowow/demo",
+    "maven.executable.path": "C:/Users/COMLAB/Downloads/apache-maven-3.9.12/bin/mvn.cmd"
+}
