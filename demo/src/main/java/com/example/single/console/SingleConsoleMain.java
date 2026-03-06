@@ -9,6 +9,8 @@ import com.example.single.core.EnemyCardBag;
 import com.example.single.core.PlayerCardBag;
 // NEW IMPORTS
 import com.example.single.core.SeedGenerator;
+import com.example.single.core.StageContent; // StageContent 추가
+import com.example.single.core.StageContentGenerator; // StageContentGenerator 추가
 
 import java.util.ArrayList;
 import java.util.List;
@@ -71,7 +73,7 @@ public class SingleConsoleMain {
 
             // 현재 맵 진행도 (층과 해당 층 내의 노드 인덱스)
             int currentFloor = 0; // 0부터 시작하는 층 인덱스
-            int currentPathIndex = 0; // 현재 층에서 선택된 경로의 인덱스 (간단화를 위해 항상 0으로 고정)
+            // int currentPathIndex = 0; // 현재 층에서 선택된 경로의 인덱스 (간단화를 위해 항상 0으로 고정) - 더 이상 사용하지 않음
             final int TOTAL_FLOORS = 5; // 총 5층으로 고정 (MapSystem 없음)
 
             System.out.println("\n--- 게임 시작! ---");
@@ -94,19 +96,19 @@ public class SingleConsoleMain {
                     break outerGameLoop;
                 }
 
-                // 현재 층과 노드 정보 가져오기 (MapSystem 없음, 간단히 BATTLE로 설정)
-                // List<Node> currentLayer = mapSystem.mapLayers.get(currentFloor);
-                // Node currentNode = currentLayer.get(currentPathIndex);
-                String currentNodeType = "BATTLE"; // 간단히 모든 층을 BATTLE로 설정
+                // 현재 층과 노드 정보 가져오기 (MapSystem 없음, StageContentGenerator 활용)
+                // StageContentGenerator는 double을 인자로 받으므로 long 타입의 gameSeed를 double로 캐스팅합니다.
+                // 이 시드로부터 각 층의 콘텐츠가 결정됩니다.
+                StageContent stageContent = StageContentGenerator.get_stage_content((double)gameSeed);
+                String currentNodeType = stageContent.isBattle ? "BATTLE" : "EVENT"; // 동적으로 노드 타입 결정
 
                 System.out.println("\n===================================");
                 System.out.printf("[ 현재 층: %02d ] [ 노드 타입: %s ]\n", currentFloor + 1, currentNodeType);
                 System.out.println("플레이어 저울 HP: " + playerScale + ", 적 저울 HP: " + enemyScale);
                 System.out.println("===================================\n");
 
-                // 노드 타입에 따른 처리 (MapSystem 없음, BATTLE만 처리)
-                // switch (currentNode.type) {
-                if ("BATTLE".equals(currentNodeType)) {
+                // 노드 타입에 따른 처리
+                if (stageContent.isBattle) { // 전투 스테이지
                         System.out.println("--- " + currentNodeType + " 전투 시작! ---");
                         
                         // 각 전투 시작 시 보드를 초기화 (이전 전투의 카드 제거)
@@ -219,15 +221,21 @@ public class SingleConsoleMain {
                         if (playerScale <= 0) {
                             break outerGameLoop;
                         }
-                        // } // if 종료
-                } else {
-                    // 다른 노드 타입은 생략
-                    System.out.println(currentNodeType + " 칸입니다. (현재는 기능 구현이 생략됩니다.)");
+                } else { // 이벤트 스테이지
+                    System.out.println("--- " + currentNodeType + " 스테이지: " + stageContent.eventGrade.getDisplayName() + " 등급 이벤트 ---");
+                    if (stageContent.eventDefinition != null) {
+                        System.out.println("  이벤트 이름: " + stageContent.eventDefinition.name);
+                        System.out.println("  이벤트 설명: " + stageContent.eventDefinition.desc); // 'description' -> 'desc'로 수정
+                        // TODO: 실제 이벤트 처리 로직 구현 (예: 플레이어 HP 회복, 카드 획득 등)
+                        System.out.println("  (현재 이벤트 기능은 구현되지 않아, 다음 층으로 바로 넘어갑니다.)\n");
+                    } else {
+                        System.out.println("  이벤트 내용이 없습니다. 다음 층으로 넘어갑니다.\n");
+                    }
                 }
 
                 // 다음 층으로 이동
                 currentFloor++;
-                currentPathIndex = 0; // 다음 층의 첫 번째 경로로 이동 (단순화를 위함)
+                // currentPathIndex = 0; // 더 이상 사용하지 않음
             } // End of outerGameLoop
         } // Scanner가 try-with-resources에 의해 자동으로 닫힙니다.
 
