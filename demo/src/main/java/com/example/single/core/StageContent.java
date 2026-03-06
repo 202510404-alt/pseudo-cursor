@@ -1,18 +1,22 @@
 package com.example.single.core;
 
-/**
- * 한 스테이지의 성격(전투/이벤트)과 선택된 이벤트 정보를 담는 DTO입니다.
- */
 public class StageContent {
+    private final EventDefinition eventDefinition;
+    // 다른 필요한 필드들을 여기에 추가할 수 있습니다.
 
-    public final boolean isBattle;
-    public final EventGrade eventGrade;
-    public final EventDefinition eventDefinition; // 전투 스테이지면 null 가능
-
-    public StageContent(boolean isBattle, EventGrade eventGrade, EventDefinition eventDefinition) {
-        this.isBattle = isBattle;
-        this.eventGrade = eventGrade;
+    // 생성자 추가
+    public StageContent(EventDefinition eventDefinition) {
         this.eventDefinition = eventDefinition;
     }
-}
 
+    // getEventDefinition 메서드 추가
+    public EventDefinition getEventDefinition() {
+        return eventDefinition;
+    }
+
+    @Override
+    public String toString() {
+        return "StageContent [eventDefinition=" + eventDefinition.getName() + 
+               ", grade=" + eventDefinition.getGrade().getDescription() + "]";
+    }
+}

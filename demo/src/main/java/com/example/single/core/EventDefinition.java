@@ -1,21 +1,33 @@
 package com.example.single.core;
 
-/**
- * 하나의 이벤트 정의를 나타냅니다.
- * events.csv의 한 줄과 1:1로 매핑됩니다.
- */
 public class EventDefinition {
+    private final String type;
+    private final String name;
+    private final String description;
+    private final EventGrade grade; // EventGrade 타입 사용
 
-    public final int id;
-    public final EventGrade grade;
-    public final String name;
-    public final String desc;
-
-    public EventDefinition(int id, EventGrade grade, String name, String desc) {
-        this.id = id;
-        this.grade = grade;
+    // 생성자 추가
+    public EventDefinition(String type, String name, String description, EventGrade grade) {
+        this.type = type;
         this.name = name;
-        this.desc = desc;
+        this.description = description;
+        this.grade = grade;
+    }
+
+    // Getter 메서드 추가
+    public String getType() {
+        return type;
+    }
+
+    public String getName() {
+        return name;
+    }
+
+    public String getDescription() {
+        return description;
+    }
+
+    public EventGrade getGrade() {
+        return grade;
     }
 }
-

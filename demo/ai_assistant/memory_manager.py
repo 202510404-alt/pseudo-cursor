@@ -39,12 +39,12 @@ def add_working_cache(user_prompt, ai_response_text, related_files=None, error_l
     # 최신 기록을 맨 앞으로
     cache.insert(0, new_entry)
     save_memory(cache)
-    print(f"🧠 [Memory Sync] 작업 문맥 저장 완료 (Error Log 포함)")
+    print(f"🧠 [Memory Sync] 작업 문맥 저장 완료 (Error Log 포함: {'Yes' if error_log else 'No'})")
 
 def get_recent_context_for_prompt():
     """
     AI에게 전달할 이전 대화 맥락을 생성합니다.
-    에러가 발생했던 이력을 강조하여 모델이 바껴도 흐름을 놓치지 않게 합니다.
+    에러가 발생했던 이력을 강조하여 모델이 바뀌어도 흐름을 놓치지 않게 합니다.
     """
     cache = load_memory()
     if not cache:
@@ -55,17 +55,21 @@ def get_recent_context_for_prompt():
     recent_cache = cache[:MAX_CONVERSATION_WINDOW]
     
     context_list = []
-    # 오래된 기록부터 순서대로 나열
+    # 오래된 기록부터 순서대로 나열 (AI가 시간의 흐름을 이해하도록)
     for m in reversed(recent_cache):
         # 에러 로그가 있다면 AI에게 이 지점을 해결해야 함을 강력히 시사
         error_context = ""
         if m.get('terminal_error'):
-            # 에러 로그가 너무 길면 핵심인 뒷부분 위주로 전달 (250자)
+            # 에러 로그가 너무 길면 핵심인 뒷부분 위주로 전달 (약 300자)
             raw_err = str(m['terminal_error'])
-            err_summary = raw_err[-250:] if len(raw_err) > 250 else raw_err
-            error_context = f"\n[CRITICAL ERROR DURING THIS STEP]:\n{err_summary}"
+            err_summary = raw_err[-300:] if len(raw_err) > 300 else raw_err
+            error_context = f"\n🚨 [CRITICAL ERROR AT THIS STAGE]:\n{err_summary}"
         
-        context_list.append(f"User Request: {m['user_query']}{error_context}\nAI Action: {m['ai_response'][:300]}...")
+        # AI 응답이 너무 길면 잘라내서 메모리 초과 방지
+        ai_snippet = m['ai_response'][:400] + "..." if len(m['ai_response']) > 400 else m['ai_response']
+        
+        step_log = f"User: {m['user_query']}{error_context}\nAI (Partial): {ai_snippet}"
+        context_list.append(step_log)
     
     # 파일 힌트 로직 (AI가 어떤 파일들을 주시해왔는지 알려줌)
     cumulative_files = set()
@@ -75,9 +79,9 @@ def get_recent_context_for_prompt():
     
     file_hint = ""
     if cumulative_files:
-        file_hint = f"\n\n🚨 [Project Insight: 지금까지 분석된 주요 파일들]\n"
+        file_hint = f"\n\n📂 [Project Insight: 지금까지 분석/수정된 주요 파일들]\n"
         file_hint += "- " + "\n- ".join(list(cumulative_files))
-        file_hint += "\n\n위 파일들 간의 관계를 유지하며 해결책을 제시하세요."
+        file_hint += "\n(위 파일들의 연관 관계를 고려하여 다음 작업을 수행하세요.)"
     
     header = "--- PREVIOUS EXECUTION FLOW & CONTEXT ---\n"
     return header + "\n---\n".join(context_list) + file_hint
@@ -87,3 +91,19 @@ def clear_memory():
     if os.path.exists(MEMORY_FILE):
         os.remove(MEMORY_FILE)
         print("🧹 Memory cleared.")
+
+import re
+
+def get_requested_files_from_last_run():
+    """
+    이전 AI 답변(NEXT_STEP_ADVICE)에서 요청된 파일 경로를 추출합니다.
+    """
+    cache = load_memory()
+    if not cache:
+        return []
+    
+    # 가장 최근 AI 응답에서 NEED_FILE: 뒤의 경로를 모두 찾음
+    last_ai_response = cache[0].get('ai_response', "")
+    requested = re.findall(r'NEED_FILE:\s*([a-zA-Z0-9_./\\]+\.[a-zA-Z0-9]+)', last_ai_response)
+    
+    return list(set(requested))  # 중복 제거

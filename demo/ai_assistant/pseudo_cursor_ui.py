@@ -6,15 +6,27 @@ from datetime import datetime
 import re
 import subprocess 
 
-from agent_core import build_index
-from ai_handler import AIHandler
+# [수정 1] 새롭게 바뀐 3단계 두뇌 'APIManager'를 임포트합니다.
+try:
+    from assistant_head.api_manager import APIManager
+except ImportError as e:
+    print(f"🚨 모듈 임포트 실패: {e}")
+    # 테스트를 위한 가짜 클래스 (APIManager 스펙에 맞춤)
+    class APIManager:
+        def __init__(self): self.last_error_log = None
+        def get_model_for_tier(self, tier): return "gemini-2.0-flash", "Gemini 2.0 Flash"
+        def run_ai_logic(self, p, update_ui_callback, terminal_callback):
+            ticks = chr(96) * 3
+            msg = f"안녕하세요! 테스트 모드입니다.\n\nTARGET_PATH: hello.py\n{ticks}python\nprint('테스트 완료!')\n{ticks}"
+            update_ui_callback("AI", msg)
 
 class PseudoCursorInterface:
     def __init__(self, root):
         self.root = root
-        self.root.title("🚀 Pseudo-Cursor v2.0 (Self-Healing Modular)")
+        self.root.title("🚀 Pseudo-Cursor v2.0 (Clean UI & MSA 3-Stage AI)")
         
-        self.ai_handler = AIHandler()
+        # [수정 2] ai_handler 대신 api_manager로 이름 변경
+        self.api_manager = APIManager()
         self.is_processing = False 
         self.code_blocks_map = {} 
 
@@ -26,32 +38,39 @@ class PseudoCursorInterface:
         self.root.grid_rowconfigure(0, weight=3)
         self.root.grid_rowconfigure(1, weight=1)
 
-        self.chat_display = scrolledtext.ScrolledText(self.root, wrap=tk.WORD, width=110, height=20, 
-                                                     font=("Malgun Gothic", 11), bg="#fdfdfd", fg="#222222")
+        # 채팅창 설정 - 기본 배경을 흰색으로
+        self.chat_display = scrolledtext.ScrolledText(self.root, wrap=tk.WORD, width=110, height=25, 
+                                                      font=("Malgun Gothic", 11), bg="#ffffff", fg="#222222")
         self.chat_display.grid(row=0, column=0, columnspan=2, padx=15, pady=10, sticky="nsew")
         self.chat_display.config(state=tk.DISABLED)
 
+        # 터미널 설정
         self.terminal_display = scrolledtext.ScrolledText(self.root, wrap=tk.WORD, width=110, height=10, 
-                                                         font=("Consolas", 10), bg="#121212", fg="#00FF41")
+                                                          font=("Consolas", 10), bg="#121212", fg="#00FF41")
         self.terminal_display.grid(row=1, column=0, columnspan=2, padx=15, pady=5, sticky="nsew")
-        self.terminal_display.config(state=tk.NORMAL)
-        self.terminal_display.insert(tk.END, "--- [SYSTEM] PSEUDO-TERMINAL READY ---\n")
         self.terminal_display.config(state=tk.DISABLED)
 
-        # 스타일 설정
+        # --- 스타일 태그 정의 (중요) ---
         self.chat_display.tag_configure("system", foreground="#008080", font=("Consolas", 10, "bold"))
         self.chat_display.tag_configure("user", foreground="#0056b3", font=("Malgun Gothic", 11, "bold"))
-        self.chat_display.tag_configure("ai_text", foreground="#333333", font=("Malgun Gothic", 11))
+        self.chat_display.tag_configure("ai", foreground="#e67e22", font=("Malgun Gothic", 11, "bold"))
+        
+        # 일반 대화: 배경 흰색(#ffffff)
+        self.chat_display.tag_configure("ai_text", foreground="#333333", background="#ffffff", font=("Malgun Gothic", 11))
+        
+        # 코드 블록: 배경 어두운 회색(#1e1e1e), 글자 연한 회색(#d4d4d4)
         self.chat_display.tag_configure("ai_code", background="#1e1e1e", foreground="#d4d4d4", 
                                         font=("Consolas", 11), spacing1=8, spacing3=8)
+        
         self.chat_display.tag_configure("error", foreground="#d9534f", font=("Malgun Gothic", 11, "bold"))
 
+        # 입력창 영역
         input_frame = tk.Frame(self.root, bg="#f0f0f0")
         input_frame.grid(row=2, column=0, columnspan=2, padx=15, pady=15, sticky="ew")
         input_frame.grid_columnconfigure(0, weight=1)
 
         self.input_entry = tk.Entry(input_frame, font=("Malgun Gothic", 12), bg="#ffffff", relief=tk.SOLID, bd=1)
-        self.input_entry.grid(row=0, column=0, padx=(0, 10), sticky="ew", ipady=5)
+        self.input_entry.grid(row=0, column=0, padx=(0, 10), sticky="ew", ipady=7)
         self.input_entry.bind("<Return>", lambda event: self.process_input()) 
 
         self.send_button = tk.Button(input_frame, text="⚡ 분석 및 실행", command=self.process_input, 
@@ -70,9 +89,10 @@ class PseudoCursorInterface:
     def initial_setup(self):
         def init():
             try:
-                build_index()
-                m_name, d_name = self.ai_handler.get_best_model()
-                self.root.after(0, lambda: self.add_message("SYSTEM", f"짭커서 가동! (사용 모델: {d_name})"))
+                # [수정 3] build_index() 삭제! 
+                # 이제 1단계 에이전트가 알아서 파일을 찾으므로 초기화 때 전체 폴더를 뒤질 필요가 없습니다.
+                m_name, d_name = self.api_manager.get_model_for_tier("NORMAL")
+                self.root.after(0, lambda: self.add_message("SYSTEM", f"짭커서 가동 완료! (기본 모델: {d_name})", "system"))
             except Exception as e:
                 self.root.after(0, lambda: self.add_message("SYSTEM", f"초기화 오류: {str(e)}", "error"))
         threading.Thread(target=init, daemon=True).start()
@@ -90,7 +110,8 @@ class PseudoCursorInterface:
         threading.Thread(target=self._run_logic_wrapper, args=(prompt,), daemon=True).start()
 
     def _run_logic_wrapper(self, prompt):
-        self.ai_handler.run_ai_logic(
+        # [수정 4] api_manager로 실행
+        self.api_manager.run_ai_logic(
             prompt,
             update_ui_callback=lambda s, t, tag=None: self.root.after(0, self.add_message, s, t, tag),
             terminal_callback=lambda m: self.root.after(0, self.write_terminal, m)
@@ -104,20 +125,25 @@ class PseudoCursorInterface:
     def add_message(self, sender, text, tag_name=None):
         self.chat_display.config(state=tk.NORMAL)
         timestamp = datetime.now().strftime("%H:%M:%S")
-        self.chat_display.insert(tk.END, f"\n[{timestamp}] {sender}: ", tag_name if tag_name else sender.lower())
+        
+        name_tag = tag_name if tag_name else sender.lower()
+        self.chat_display.insert(tk.END, f"\n[{timestamp}] {sender}: ", name_tag)
 
         if sender == "AI":
-            # 명령어 실행 체크
             cmd_match = re.search(r'RUN_COMMAND:\s*(.*)', text)
             if cmd_match:
                 cmd = cmd_match.group(1).strip()
                 self.root.after(100, lambda c=cmd: self.run_terminal_command(c))
 
-            # 코드 블록 및 파일 경로 파싱
-            parts = re.split(r'(TARGET_PATH:.*?```[\s\S]*?```)', text)
+            # 코드 블록 파싱 (기존 로직 유지)
+            pattern = re.compile(r'(TARGET_PATH:.*?`{3}[\s\S]*?`{3})', re.DOTALL)
+            parts = pattern.split(text)
+
             for part in parts:
+                if not part: continue
+
                 path_match = re.search(r'TARGET_PATH:\s*(.*?)\n', part)
-                code_match = re.search(r'```(?:\w+)?\n([\s\S]*?)```', part)
+                code_match = re.search(r'`{3}(?:\w+)?\n([\s\S]*?)`{3}', part)
 
                 if path_match and code_match:
                     file_path = path_match.group(1).strip()
@@ -127,11 +153,14 @@ class PseudoCursorInterface:
                     
                     self.chat_display.insert(tk.END, f"\n📂 {file_path} (클릭하여 반영)\n", "system")
                     self.chat_display.insert(tk.END, f"{code_content}\n", ("ai_code", unique_tag))
+                    
                     self.chat_display.tag_bind(unique_tag, "<Button-1>", lambda e, t=unique_tag: self.apply_to_file(t))
+                    self.chat_display.tag_bind(unique_tag, "<Enter>", lambda e: self.chat_display.config(cursor="hand2"))
+                    self.chat_display.tag_bind(unique_tag, "<Leave>", lambda e: self.chat_display.config(cursor=""))
                 else:
                     self.chat_display.insert(tk.END, part, "ai_text")
         else:
-            self.chat_display.insert(tk.END, text + "\n", tag_name if tag_name else "user")
+            self.chat_display.insert(tk.END, text + "\n", name_tag)
 
         self.chat_display.see(tk.END)
         self.chat_display.config(state=tk.DISABLED)
@@ -140,7 +169,7 @@ class PseudoCursorInterface:
         data = self.code_blocks_map.get(tag_name)
         if not data: return
         file_path, code = data['path'], data['code']
-        if messagebox.askyesno("Confirm Update", f"[{file_path}]\n파일을 수정하시겠습니까?"):
+        if messagebox.askyesno("Confirm", f"[{file_path}]\n파일에 반영하시겠습니까?"):
             try:
                 full_path = os.path.join(os.getcwd(), file_path)
                 os.makedirs(os.path.dirname(full_path), exist_ok=True)
@@ -154,25 +183,24 @@ class PseudoCursorInterface:
         def target():
             self.write_terminal(f"\n> Executing: {command}")
             try:
-                # 'demo' 폴더가 있으면 거기서 실행, 없으면 현재 경로
-                working_dir = os.path.join(os.getcwd(), "demo")
-                if not os.path.exists(working_dir): working_dir = os.getcwd()
-                
+                working_dir = os.getcwd()
                 process = subprocess.Popen(command, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, cwd=working_dir)
                 stdout, stderr = process.communicate()
                 
                 if stdout: self.write_terminal(stdout)
                 if stderr: 
                     self.write_terminal(stderr, is_error=True)
-                    self.ai_handler.last_error_log = stderr
-                else:
-                    self.ai_handler.last_error_log = None
+                    # [치유 발동 포인트]
+                    self.api_manager.last_error_log = stderr
+                    
+                    # 만약 사용자가 '자동 치유' 모드를 원한다면 여기서 바로 다음 시도를 트리거할 수 있습니다.
+                    # self.root.after(1000, lambda: self._run_logic_wrapper("터미널 에러를 확인하고 자가 치유를 시작해."))
             except Exception as e:
-                self.write_terminal(f"Execution Failed: {str(e)}", is_error=True)
+                self.write_terminal(f"Failed: {str(e)}", is_error=True)
         threading.Thread(target=target, daemon=True).start()
 
 if __name__ == "__main__":
     root = tk.Tk()
-    root.geometry("1100x1000")
+    root.geometry("1100x900")
     app = PseudoCursorInterface(root)
     root.mainloop()
