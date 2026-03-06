@@ -7,7 +7,7 @@ def extract_error_context(error_log, terminal_callback, requested_files=None):
     에러 로그 및 AI가 이전 루프에서 추가로 요청한 파일들을 수집합니다.
     """
     project_root = project_scanner.get_project_root()
-    skeleton = project_scanner.scan_project(project_root)
+    skeleton = project_scanner.scan_project()
     
     # 1. 정규표현식으로 에러 로그 내 파일 추출
     found_paths = set(re.findall(r'([a-zA-Z0-9_./\\]+\.(?:java|py|cpp|js|ts|h|hpp|cs|html|css|json))', error_log))

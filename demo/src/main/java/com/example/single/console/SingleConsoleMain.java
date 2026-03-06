@@ -2,78 +2,67 @@ package com.example.single.console;
 
 import com.example.single.core.EventDataLoader;
 import com.example.single.core.EventDefinition;
-import com.example.single.core.EventGrade; // EventGrade import 추가
+// import com.example.single.core.EventGrade; // 사용되지 않아 제거
 import com.example.single.core.SeedGenerator;
 import com.example.single.core.StageContent;
 import com.example.single.core.StageContentGenerator;
 
 import java.util.List;
-import java.util.Scanner;
+import java.util.Scanner; // 사용자 입력을 위해 필요
 
 public class SingleConsoleMain {
 
-    private static final String EVENT_DATA_PATH = "/data/events.csv"; // 리소스 경로
-
     public static void main(String[] args) {
-        Scanner scanner = new Scanner(System.in);
+        System.out.println("--- Pseudo Cursor - Single Player Console ---");
 
-        System.out.println("====== 싱글 플레이어 게임 시작 ======");
-
-        // 1. 시드 생성
-        SeedGenerator seedGenerator = new SeedGenerator(); // public 생성자 호출
-        long gameSeed = seedGenerator.generateSeed(); // generateSeed 메서드 호출
-        System.out.println("게임 시드: " + gameSeed);
+        // 1. Seed 생성
+        SeedGenerator seedGenerator = new SeedGenerator();
+        long gameSeed = seedGenerator.generateSeed();
+        System.out.println("게임 시작 시드: " + gameSeed);
 
         // 2. 이벤트 데이터 로드
-        EventDataLoader dataLoader = new EventDataLoader(EVENT_DATA_PATH);
-        List<EventDefinition> eventDefinitions = dataLoader.loadEventDefinitions();
+        EventDataLoader eventDataLoader = new EventDataLoader();
+        List<EventDefinition> eventDefinitions = eventDataLoader.loadEventDefinitions("events.csv");
 
         if (eventDefinitions.isEmpty()) {
-            System.err.println("이벤트 데이터를 로드하는 데 실패했습니다. 게임을 시작할 수 없습니다.");
+            System.err.println("오류: 이벤트 정의를 로드할 수 없습니다. 'events.csv' 파일이 올바른 경로에 있는지 확인하세요.");
             return;
         }
-        System.out.println("총 " + eventDefinitions.size() + "개의 이벤트 정의 로드 완료.");
+        System.out.println("로드된 이벤트 수: " + eventDefinitions.size());
 
         // 3. 스테이지 콘텐츠 생성기 초기화
-        // StageContentGenerator는 로드된 이벤트 정의 리스트를 받습니다.
-        StageContentGenerator stageContentGenerator = new StageContentGenerator(eventDefinitions); 
+        StageContentGenerator contentGenerator = new StageContentGenerator(eventDefinitions);
 
         int currentFloor = 1;
-        boolean playing = true;
+        final int MAX_FLOOR = 5; // 임시로 5층까지 진행
 
-        while (playing) {
-            System.out.println("\n--- " + currentFloor + "층 ---");
+        // 사용자 입력을 위한 Scanner를 try-with-resources 구문으로 감싸 자원 누수 방지
+        try (Scanner scanner = new Scanner(System.in)) {
+            while (currentFloor <= MAX_FLOOR) {
+                System.out.println("\n--- 현재 층: " + currentFloor + " ---");
 
-            // 4. 현재 층의 콘텐츠 생성
-            // generateStageContent 메서드 호출
-            StageContent stageContent = stageContentGenerator.generateStageContent(gameSeed, currentFloor);
+                // 층에 따른 스테이지 콘텐츠 생성
+                StageContent stageContent = contentGenerator.generateStageContent(gameSeed, currentFloor);
+                EventDefinition event = stageContent.getEventDefinition();
 
-            // 5. 생성된 콘텐츠 정보 출력 (StageContent에서 getEventDefinition() 사용)
-            EventDefinition currentEvent = stageContent.getEventDefinition();
+                System.out.println("이벤트 발생! 종류: " + event.getType() + ", 이름: " + event.getName());
+                System.out.println("설명: " + event.getDescription());
+                System.out.println("등급: " + event.getGrade().getDescription()); // EventGrade의 getDescription() 사용
 
-            System.out.println("이벤트 발생!");
-            System.out.println("유형: " + currentEvent.getType());       // getType() 호출
-            System.out.println("이름: " + currentEvent.getName());       // getName() 호출
-            System.out.println("설명: " + currentEvent.getDescription()); // getDescription() 호출
-            System.out.println("등급: " + currentEvent.getGrade().getDescription()); // getGrade().getDescription() 호출
+                // TODO: 실제 이벤트 처리 로직 구현 (예: 플레이어 HP 회복, 카드 획득 등)
+                // 현재는 단순히 이벤트 정보를 출력하는 것으로 만족합니다.
+                System.out.println("이벤트 처리 로직 (TODO): 플레이어 상태 변화가 여기에 반영됩니다.");
 
-            // TODO: 실제 이벤트 처리 로직 구현 (예: 플레이어 HP 회복, 카드 획득 등)
-            System.out.println("[이벤트 처리 로직 Placeholder]");
+                System.out.print("다음 층으로 진행하려면 Enter를 누르세요...");
+                scanner.nextLine(); // 사용자 입력 대기
 
-            System.out.print("다음 층으로 진행하시겠습니까? (y/n): ");
-            String input = scanner.nextLine();
-
-            if (input.equalsIgnoreCase("y")) {
                 currentFloor++;
-                // TODO: 층 진행 시 게임 상태 업데이트 로직 추가 (예: 플레이어 상태 변화, 적 등장 등)
-                System.out.println("[게임 상태 업데이트 Placeholder]");
-            } else {
-                playing = false;
-                System.out.println("게임을 종료합니다.");
-            }
-        }
 
-        scanner.close();
-        System.out.println("====== 게임 종료 ======");
+                // TODO: 층 진행 시 게임 상태 업데이트 로직 추가 (예: 플레이어 상태 변화, 적 등장 등)
+                // 이 부분은 게임 상태를 관리하는 별도의 클래스가 필요할 수 있습니다.
+            }
+        } // try-with-resources에 의해 Scanner는 여기서 자동 닫힘
+
+        System.out.println("\n--- 모든 층을 완료했습니다! 게임 종료 ---");
     }
 }

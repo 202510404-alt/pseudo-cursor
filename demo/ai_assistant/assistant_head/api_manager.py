@@ -1,11 +1,27 @@
 import time
+import subprocess
 import google.generativeai as genai
 from config import GEMINI_API_KEY
 from memory_manager import add_working_cache, get_recent_context_for_prompt
 
 # agent_head 함수를 같은 폴더에서 불러옵니다.
 from .agent_head import run_multi_stage_agent
-
+def get_vsc_style_problems(target_dirs):
+    """
+    VSC Problems 탭처럼 문법 에러만 조용히 수집합니다.
+    target_dirs: ['src/main/java/com/example/single/core', ...]
+    """
+    problems_log = ""
+    for d in target_dirs:
+        # -proc:none (어노테이션 처리 안함), -Xlint (상세 경고), -d (임시 빌드 경로)
+        # 실행은 안 하고 문법만 체크하는 명령어
+        check_cmd = f"javac -encoding UTF-8 -Xlint:all -proc:none -d bin src/main/java/com/example/single/console/*.java src/main/java/com/example/single/core/*.java"
+        
+        result = subprocess.run(check_cmd, shell=True, capture_output=True, text=True)
+        if result.stderr:
+            problems_log += result.stderr
+            
+    return problems_log if problems_log else "No syntax problems found."
 class APIManager:
     def __init__(self):
         genai.configure(api_key=GEMINI_API_KEY)

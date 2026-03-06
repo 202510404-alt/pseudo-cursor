@@ -79,7 +79,8 @@ def get_project_map():
         project_map += f"\n[FILE: {path}]\n{get_code_skeleton(path)}\n"
     return project_map
 
-# project_scanner.py 맨 아래에 추가
-def scan_project(root_path=None):
-    """stage3_healer와의 호환성을 위한 별명 함수"""
-    return get_project_map()
+# project_scanner.py 맨 밑에 넣었던 것 수정
+def scan_project(*args, **kwargs):
+    # 명시적으로 결과 문자열을 반환함을 보장
+    result = get_project_map()
+    return str(result)
